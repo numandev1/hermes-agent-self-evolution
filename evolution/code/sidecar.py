@@ -34,6 +34,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -136,7 +137,7 @@ def find_sidecar(explicit: Optional[str] = None) -> list[str]:
             return [str(path)]
         if path.is_dir():
             # A checkout: run the package from inside it.
-            return ["python", "-m", "hermes_problems"]
+            return [sys.executable, "-m", "hermes_problems"]
         raise SidecarNotAvailable(
             f"{SIDECAR_ENV} points at {source}, which is neither an executable "
             f"nor a directory.\n\n{_INSTALL_HINT}"
@@ -148,12 +149,12 @@ def find_sidecar(explicit: Optional[str] = None) -> list[str]:
 
     # Importable without us importing it: ask the interpreter, in a subprocess.
     probe = subprocess.run(
-        ["python", "-c", "import importlib.util,sys;"
+        [sys.executable, "-c", "import importlib.util,sys;"
          "sys.exit(0 if importlib.util.find_spec('hermes_problems') else 1)"],
         capture_output=True,
     )
     if probe.returncode == 0:
-        return ["python", "-m", "hermes_problems"]
+        return [sys.executable, "-m", "hermes_problems"]
 
     raise SidecarNotAvailable(_INSTALL_HINT)
 

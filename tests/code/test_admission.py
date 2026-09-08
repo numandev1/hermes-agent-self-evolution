@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import textwrap
 from pathlib import Path
 
@@ -224,10 +225,10 @@ class TestPytestCheck:
 
 class TestCommandCheck:
     def test_exit_zero_passes(self, tmp_path):
-        assert CommandCheck("ok", ["python", "-c", "pass"]).run(tmp_path).passed is True
+        assert CommandCheck("ok", [sys.executable, "-c", "pass"]).run(tmp_path).passed is True
 
     def test_nonzero_fails_and_captures_output(self, tmp_path):
-        result = CommandCheck("bad", ["python", "-c", "import sys; print('nope'); sys.exit(3)"]).run(tmp_path)
+        result = CommandCheck("bad", [sys.executable, "-c", "import sys; print('nope'); sys.exit(3)"]).run(tmp_path)
         assert result.passed is False
         assert result.exit_code == 3
         assert "nope" in result.detail
@@ -238,7 +239,7 @@ class TestCommandCheck:
         assert "could not run" in result.detail
 
     def test_a_hanging_command_times_out(self, tmp_path):
-        result = CommandCheck("hang", ["python", "-c", "import time; time.sleep(30)"], timeout_s=1).run(tmp_path)
+        result = CommandCheck("hang", [sys.executable, "-c", "import time; time.sleep(30)"], timeout_s=1).run(tmp_path)
         assert result.passed is False
         assert "timed out" in result.detail
 
@@ -251,7 +252,7 @@ class TestSandboxEnvironment:
 
         script = "import os; print(os.environ.get('ANTHROPIC_API_KEY','ABSENT')); " \
                  "print(os.environ.get('HARMLESS_VAR','ABSENT'))"
-        result = CommandCheck("env", ["python", "-c", script + "; import sys; sys.exit(1)"]).run(tmp_path)
+        result = CommandCheck("env", [sys.executable, "-c", script + "; import sys; sys.exit(1)"]).run(tmp_path)
 
         assert "sk-ant-should-not-leak" not in result.detail
         assert "ABSENT" in result.detail
@@ -260,7 +261,7 @@ class TestSandboxEnvironment:
     def test_the_sandbox_marker_is_set(self, tmp_path):
         result = CommandCheck(
             "marker",
-            ["python", "-c", "import os,sys; print(os.environ.get('EVOLUTION_SANDBOX')); sys.exit(1)"],
+            [sys.executable, "-c", "import os,sys; print(os.environ.get('EVOLUTION_SANDBOX')); sys.exit(1)"],
         ).run(tmp_path)
         assert "1" in result.detail
 

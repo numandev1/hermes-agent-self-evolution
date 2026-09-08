@@ -234,7 +234,7 @@ class TestSidecarDiscovery:
     def test_an_explicit_checkout_runs_the_module(self, tmp_path):
         checkout = tmp_path / "hermes-evolver-problems"
         checkout.mkdir()
-        assert find_sidecar(str(checkout)) == ["python", "-m", "hermes_problems"]
+        assert find_sidecar(str(checkout)) == [sys.executable, "-m", "hermes_problems"]
 
     def test_a_bogus_explicit_path_is_rejected(self, tmp_path):
         with pytest.raises(SidecarNotAvailable, match="neither an executable"):
@@ -379,10 +379,20 @@ class TestEndToEnd:
             + "\n"
         )
 
+        # Isolate from the operator's real install. hermes_data_dir=None falls
+        # back to ~/.hermes, and recorded_checks_for() then replays whatever
+        # verification commands that machine happens to have logged -- on a
+        # populated install this test tried to replay a real `npm` command in a
+        # sandbox with no package.json and failed. An empty data dir keeps the
+        # gate to the checks this test actually declares.
+        data_dir = tmp_path / "hermes-data"
+        data_dir.mkdir()
+        (data_dir / "config.yaml").write_text("{}\n")
+
         result = evolve_code(
             target_paths=["agent/tool_executor.py"],
             hermes_repo=str(repo),
-            hermes_data_dir=None,
+            hermes_data_dir=str(data_dir),
             iterations=1,
             output_root=str(tmp_path / "out"),
             sidecar_path=str(stub),

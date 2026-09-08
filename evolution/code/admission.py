@@ -36,6 +36,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -206,7 +207,7 @@ class PytestCheck:
     extra_args: Sequence[str] = ("-q", "--tb=no")
 
     def run(self, repo: Path) -> CheckResult:
-        argv = ["python", "-m", "pytest", *self.paths, *self.extra_args]
+        argv = [sys.executable, "-m", "pytest", *self.paths, *self.extra_args]
         result = _run_command(self.name, argv, repo, self.timeout_s)
         # pytest exit 5 means "no tests collected", which is not a pass — a
         # candidate that deletes the tests it was failing must not be admitted.

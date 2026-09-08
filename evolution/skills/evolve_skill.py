@@ -86,6 +86,32 @@ class EvolutionError(RuntimeError):
     """A run could not complete. Carries a message fit for a notification."""
 
 
+#: Filename for a variant the verdict cleared for deployment.
+DEPLOYABLE_ARTIFACT = "evolved_skill.md"
+#: Filename for a variant that was produced but must NOT be deployed.
+HOLD_ARTIFACT = "evolved_HOLD.md"
+
+
+def is_deployable(verdict: str, constraint_failures: list[str] | None) -> bool:
+    """True only when the run may be copied over a live skill.
+
+    SHIP alone is not enough — a constraint failure vetoes it regardless of the
+    measured delta.
+    """
+    return verdict == "SHIP" and not constraint_failures
+
+
+def artifact_name(deployable: bool) -> str:
+    """Filename that encodes the verdict, so the name cannot outrank it.
+
+    Out-of-process consumers (cron wrappers, later runs, a human browsing the
+    output dir) key off the filename. Emitting ``evolved_skill.md`` for a
+    rejected variant is what let a byte-identical no-op be reported as
+    deployable, so a non-shippable variant never gets that name.
+    """
+    return DEPLOYABLE_ARTIFACT if deployable else HOLD_ARTIFACT
+
+
 def _is_successful_improvement(baseline_text: str, evolved_text: str, improvement: float) -> bool:
     """Return True only when optimization produced a real artifact change and a score win."""
     return evolved_text != baseline_text and improvement > 0
@@ -410,7 +436,18 @@ def evolve(
     output_dir = config.resolved_output_dir() / skill_name / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    (output_dir / "evolved_skill.md").write_text(evolved_full)
+    # Name the artifact after the verdict. A file called `evolved_skill.md`
+    # reads as "the improved skill, ready to deploy" to anything that finds it
+    # out of process — a cron wrapper, a later run, a human in the output dir.
+    # Writing that name unconditionally handed a deploy signal to variants the
+    # verdict had just rejected: a real run shipped `evolved_skill.md` that was
+    # byte-identical to its baseline, and the wrapper duly told the operator to
+    # copy it over the live skill. The in-process guard below was never the
+    # problem; the filename was.
+    deployable = is_deployable(verdict, failures)
+    evolved_name = artifact_name(deployable)
+    evolved_path = output_dir / evolved_name
+    evolved_path.write_text(evolved_full)
     (output_dir / "baseline_skill.md").write_text(skill["raw"])
     report.write(output_dir)
 
@@ -428,6 +465,10 @@ def evolve(
         "improvement": improvement,
         "verdict": verdict,
         "verdict_reason": reason,
+        # Explicit, so a consumer never has to re-derive deployability by
+        # string-matching the verdict or by trusting a filename.
+        "deployable": deployable,
+        "artifact": evolved_name,
         "constraints_passed": not failures,
         "constraint_failures": failures,
         "train_examples": len(dataset.train),
@@ -441,7 +482,7 @@ def evolve(
     result = {
         **metrics,
         "output_dir": str(output_dir),
-        "evolved_path": str(output_dir / "evolved_skill.md"),
+        "evolved_path": str(evolved_path),
         "skill_path": str(skill_path),
         "report_markdown": report.to_markdown(),
         "constraint_lines": constraint_lines,
@@ -451,10 +492,12 @@ def evolve(
     # ── 12. Deploy ──────────────────────────────────────────────────────
     if failures:
         console.print("[red]✗ Constraints failed — not deploying[/red]")
+        console.print(f"  [dim]Variant kept for review at {evolved_path}[/dim]")
         return result
 
     if verdict != "SHIP":
         console.print(f"[yellow]⚠ Verdict is {verdict} — not deploying[/yellow]")
+        console.print(f"  [dim]Variant kept for review at {evolved_path}[/dim]")
         return result
 
     if canary:
@@ -480,7 +523,7 @@ def evolve(
     elif not canary:
         console.print(
             "  [dim]Review the diff: "
-            f"diff {output_dir}/baseline_skill.md {output_dir}/evolved_skill.md[/dim]"
+            f"diff {output_dir}/baseline_skill.md {evolved_path}[/dim]"
         )
         console.print("  [dim]Re-run with --create-pr to open a pull request.[/dim]")
 
